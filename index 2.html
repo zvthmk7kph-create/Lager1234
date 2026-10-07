@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lagerkontrolle Neu</title>
+<style>
+:root{--bg:#08111f;--card:#121d31;--line:#2c3d5c;--muted:#9db0ce;--ok:#68e39c;--warn:#ffd36b;--bad:#ff7d7d;--accent:#fff}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{min-height:100vh}
+.wrap{max-width:760px;margin:auto;padding:18px}
+h1{font-size:32px;margin:8px 0 4px}
+.version{color:#78b7ff;font-size:13px;margin-bottom:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin:12px 0}
+.hidden{display:none!important}
+button,input{width:100%;padding:14px;border-radius:12px;font-size:17px}
+button{border:0;font-weight:800;margin-top:10px}
+.primary{background:#fff;color:#0a0f18}
+.secondary{background:#263750;color:#fff}
+.muted{color:var(--muted)}
+.row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #263652;align-items:center}
+.row:last-child{border-bottom:0}
+.ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+.badge{font-size:11px;font-weight:800;padding:5px 8px;border-radius:999px;display:inline-block;margin-bottom:5px}
+.ready{background:#153824;color:var(--ok)} .review{background:#453812;color:var(--warn)} .unmapped{background:#421b21;color:var(--bad)}
+.big{font-size:29px;font-weight:900;text-align:center;margin:22px 0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:#0d1728;border:1px solid var(--line);padding:12px;border-radius:12px;text-align:center}
+.stat b{font-size:22px;display:block}
+.result{background:#0d1728;border:1px solid var(--line);padding:14px;border-radius:14px;margin-top:14px;text-align:center}
+.tabs{display:flex;gap:8px;overflow:auto;margin-bottom:12px}
+.tabs button{width:auto;margin:0;white-space:nowrap;padding:9px 12px}
+.modal{position:fixed;inset:0;background:#000b;display:flex;align-items:flex-end;z-index:50}
+.sheet{background:#152036;width:100%;max-width:760px;margin:auto;padding:20px;border-radius:22px 22px 0 0}
+.small{font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lagerkontrolle</h1>
+  <div class="version">NEUBAU · Version 1.0</div>
+
+  <section id="startScreen" class="card">
+    <h2>Warenliste laden</h2>
+    <p class="muted">Für den Funktionstest wird nach Auswahl einer PDF ein Beispielauftrag geladen. Die echte automatische PDF-Auswertung bauen wir danach separat ein.</p>
+    <input id="pdfInput" type="file" accept=".pdf,application/pdf">
+    <button id="loadBtn" class="primary">Auftrag öffnen</button>
+    <div id="startMsg"></div>
+  </section>
+
+  <section id="reviewScreen" class="hidden">
+    <div class="card">
+      <h2>Auftrag bereit</h2>
+      <div class="row"><span>Kunde</span><b>Mehmet Özkara Kassel</b></div>
+      <div class="row"><span>Auftrag</span><b>105426</b></div>
+      <div class="row"><span>Positionen</span><b id="countAll"></b></div>
+      <div class="stats">
+        <div class="stat"><b id="countReady" class="ok"></b><span>scanbereit</span></div>
+        <div class="stat"><b id="countReview" class="warn"></b><span>prüfen</span></div>
+        <div class="stat"><b id="countUnmapped" class="bad"></b><span>nicht zugeordnet</span></div>
+      </div>
+      <button id="startScanBtn" class="primary">Kontrolle starten</button>
+      <button id="reviewOverviewBtn" class="secondary">Alle Positionen ansehen</button>
+    </div>
+  </section>
+
+  <section id="scanScreen" class="card hidden">
+    <div class="muted">Auftrag 105426 · Mehmet Özkara Kassel</div>
+    <div class="big">NÄCHSTEN KARTON SCANNEN</div>
+    <input id="eanInput" type="text" inputmode="numeric" autocomplete="off" placeholder="EAN scannen oder eintippen">
+    <button id="scanBtn" class="primary">Scan bestätigen</button>
+    <div id="scanResult" class="result muted">Noch kein Karton gescannt.</div>
+    <div id="progress" class="muted" style="text-align:center;margin-top:14px"></div>
+    <button id="manualBtn" class="secondary hidden">Menge manuell erfassen</button>
+    <button id="scanOverviewBtn" class="secondary">Auftragsübersicht</button>
+  </section>
+
+  <section id="overviewScreen" class="card hidden">
+    <h2>Auftragsübersicht</h2>
+    <div class="tabs">
+      <button class="secondary" data-filter="all">Alle</button>
+      <button class="secondary" data-filter="ready">Scanbereit</button>
+      <button class="secondary" data-filter="review">Prüfen</button>
+      <button class="secondary" data-filter="unmapped">Nicht zugeordnet</button>
+      <button class="secondary" data-filter="open">Noch offen</button>
+    </div>
+    <div id="overviewList"></div>
+    <button id="backBtn" class="primary">Zurück</button>
+  </section>
+</div>
+
+<div id="manualModal" class="modal hidden">
+  <div class="sheet">
+    <h2>Manuelle Kartonmenge</h2>
+    <div id="manualInfo" class="muted"></div>
+    <input id="manualQty" type="number" min="1" inputmode="numeric" placeholder="Anzahl Kartons">
+    <input id="manualReason" type="text" placeholder="Grund, z. B. komplette Palette gezählt">
+    <button id="manualApplyBtn" class="primary">Bestätigen</button>
+    <button id="manualCloseBtn" class="secondary">Abbrechen</button>
+  </div>
+</div>
+
+<script>
+const initialItems=[{"name": "28cm Kapakli Balik Tavasi", "article": "", "ean": "513688409109", "ve": 30, "qty": 5, "id": 1, "status": "ready", "cartons": 1, "scanned": 0, "manual": 0}, {"name": "6tlg Mokkatassenset", "article": "MPB-097", "ean": "6974057403616", "ve": 12, "qty": 120, "id": 2, "status": "ready", "cartons": 10, "scanned": 0, "manual": 0}, {"name": "Lahmacun Multigrill", "article": "HR-001", "ean": "6971735065609", "ve": 1, "qty": 6, "id": 3, "status": "ready", "cartons": 6, "scanned": 0, "manual": 0}, {"name": "Sleepy Blau Normal", "article": "", "ean": "8682241212613", "ve": 12, "qty": 288, "id": 4, "status": "ready", "cartons": 24, "scanned": 0, "manual": 0}, {"name": "Gas sac 60cm", "article": "", "ean": "", "ve": null, "qty": 2, "id": 5, "status": "unmapped", "cartons": null, "scanned": 0, "manual": 0}, {"name": "5 Liter kavanoz", "article": "", "ean": "4985559489456", "ve": null, "qty": 8, "id": 6, "status": "review", "cartons": null, "scanned": 0, "manual": 0}];
+let items=JSON.parse(JSON.stringify(initialItems));
+let currentItemId=null;
+let previousScreen='reviewScreen';
+
+const byId=id=>document.getElementById(id);
+const screens=['startScreen','reviewScreen','scanScreen','overviewScreen'];
+
+function showScreen(id){
+  screens.forEach(s=>byId(s).classList.add('hidden'));
+  byId(id).classList.remove('hidden');
+}
+
+function usedCartons(p){ return (p.scanned||0)+(p.manual||0); }
+
+function updateCounts(){
+  byId('countAll').textContent=items.length;
+  byId('countReady').textContent=items.filter(x=>x.status==='ready').length;
+  byId('countReview').textContent=items.filter(x=>x.status==='review').length;
+  byId('countUnmapped').textContent=items.filter(x=>x.status==='unmapped').length;
+}
+
+function updateProgress(){
+  const ready=items.filter(x=>x.status==='ready');
+  const done=ready.reduce((s,p)=>s+usedCartons(p),0);
+  const total=ready.reduce((s,p)=>s+p.cartons,0);
+  byId('progress').textContent=`Kontrolliert: ${done} / ${total} Kartons`;
+}
+
+function handleLoad(){
+  const file=byId('pdfInput').files[0];
+  if(!file){
+    byId('startMsg').innerHTML='<div class="result bad"><b>Bitte zuerst eine PDF auswählen.</b></div>';
+    return;
+  }
+  byId('startMsg').innerHTML='';
+  updateCounts();
+  showScreen('reviewScreen');
+}
+
+function startScan(){
+  showScreen('scanScreen');
+  updateProgress();
+  setTimeout(()=>byId('eanInput').focus(),100);
+}
+
+function handleScan(){
+  const input=byId('eanInput');
+  const code=input.value.trim().replace(/\s/g,'');
+  input.value='';
+  if(!code) return;
+
+  const p=items.find(x=>x.ean===code);
+  currentItemId=p?p.id:null;
+  byId('manualBtn').classList.toggle('hidden',!p || p.status!=='ready');
+
+  if(!p){
+    byId('scanResult').innerHTML=`<span class="bad"><b>❌ EAN NICHT IM AUFTRAG</b></span><br>${code}`;
+    return;
+  }
+  if(p.status!=='ready'){
+    byId('scanResult').innerHTML=`<span class="warn"><b>⚠️ ARTIKEL MUSS GEPRÜFT WERDEN</b></span><br>${p.name}`;
+    return;
+  }
+  if(usedCartons(p)>=p.cartons){
+    byId('scanResult').innerHTML=`<span class="bad"><b>❌ MENGE BEREITS VOLLSTÄNDIG</b></span><br>${p.name}<br>${usedCartons(p)}/${p.cartons} Kartons`;
+    return;
+  }
+  p.scanned++;
+  const pcs=Math.min(p.qty,usedCartons(p)*p.ve);
+  byId('scanResult').innerHTML=`<span class="ok"><b>✅ ${p.name}</b></span><br><span style="font-size:25px"><b>${usedCartons(p)}/${p.cartons} Kartons</b></span><br>${pcs}/${p.qty} Stück`;
+  updateProgress();
+}
+
+function openOverview(from){
+  previousScreen=from;
+  showScreen('overviewScreen');
+  renderOverview('all');
+}
+
+function renderOverview(filter){
+  let list=items;
+  if(['ready','review','unmapped'].includes(filter)) list=items.filter(x=>x.status===filter);
+  if(filter==='open') list=items.filter(x=>x.status!=='ready' || usedCartons(x)<x.cartons);
+
+  byId('overviewList').innerHTML=list.map(p=>{
+    const badge=p.status==='ready'
+      ? '<span class="badge ready">SCANBEREIT</span>'
+      : p.status==='review'
+        ? '<span class="badge review">PRÜFEN</span>'
+        : '<span class="badge unmapped">NICHT ZUGEORDNET</span>';
+
+    const details=p.status==='ready'
+      ? `${usedCartons(p)}/${p.cartons} Kartons · ${p.qty} Stück · VE ${p.ve}`
+      : `Menge ${p.qty}${p.ve?' · VE '+p.ve:' · VE fehlt'}${p.ean?'':' · EAN fehlt'}`;
+
+    const manual=p.status==='ready'
+      ? `<button class="secondary" style="width:auto;padding:8px 10px;margin:0" data-manual-id="${p.id}">Manuell</button>`
+      : '';
+
+    return `<div class="row"><div><div>${badge}</div><b>${p.name}</b><div class="muted small">${p.article||''}${p.ean?'<br>'+p.ean:''}<br>${details}</div></div>${manual}</div>`;
+  }).join('');
+
+  document.querySelectorAll('[data-manual-id]').forEach(btn=>{
+    btn.addEventListener('click',()=>openManual(Number(btn.dataset.manualId)));
+  });
+}
+
+function openManual(id){
+  const p=items.find(x=>x.id===id);
+  if(!p || p.status!=='ready') return;
+  currentItemId=id;
+  const remaining=Math.max(0,p.cartons-usedCartons(p));
+  byId('manualInfo').innerHTML=`<b>${p.name}</b><br>Soll: ${p.cartons} Kartons · offen: ${remaining}`;
+  byId('manualQty').value='';
+  byId('manualReason').value='';
+  byId('manualModal').classList.remove('hidden');
+}
+
+function applyManual(){
+  const p=items.find(x=>x.id===currentItemId);
+  if(!p) return;
+  const n=parseInt(byId('manualQty').value||'0',10);
+  const remaining=p.cartons-usedCartons(p);
+  if(n<1) return;
+  if(n>remaining){
+    alert(`Maximal ${remaining} Kartons können noch hinzugefügt werden.`);
+    return;
+  }
+  p.manual+=n;
+  byId('manualModal').classList.add('hidden');
+  updateProgress();
+  if(!byId('overviewScreen').classList.contains('hidden')) renderOverview('all');
+}
+
+byId('loadBtn').addEventListener('click',handleLoad);
+byId('startScanBtn').addEventListener('click',startScan);
+byId('reviewOverviewBtn').addEventListener('click',()=>openOverview('reviewScreen'));
+byId('scanBtn').addEventListener('click',handleScan);
+byId('eanInput').addEventListener('keydown',e=>{if(e.key==='Enter')handleScan();});
+byId('scanOverviewBtn').addEventListener('click',()=>openOverview('scanScreen'));
+byId('manualBtn').addEventListener('click',()=>{if(currentItemId)openManual(currentItemId);});
+byId('manualCloseBtn').addEventListener('click',()=>byId('manualModal').classList.add('hidden'));
+byId('manualApplyBtn').addEventListener('click',applyManual);
+byId('backBtn').addEventListener('click',()=>showScreen(previousScreen));
+document.querySelectorAll('[data-filter]').forEach(btn=>btn.addEventListener('click',()=>renderOverview(btn.dataset.filter)));
+</script>
+</body>
+</html>
